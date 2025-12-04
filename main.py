@@ -4,6 +4,7 @@ import time
 import threading
 import json
 import os
+import re
 
 from rpc import DiscordRPC
 
@@ -78,8 +79,8 @@ class CurrentTrack:
 
     @classmethod
     def set(cls, skip_none_check=False, **kwargs):
-        image_url = kwargs.get("image_url")
-        cls.image_url = image_url
+        if "image_url" in kwargs:
+            cls.image_url = kwargs.get("image_url")
 
         id = kwargs.get("id")
         duration = kwargs.get("duration")
@@ -102,6 +103,7 @@ class CurrentTrack:
         cls.title = title
         cls.artist = artist
         cls.album = album
+        cls.image_url = None  # Reset image when track changes
         cls.started_at = time.time()
         cls.ends_at = cls.started_at + (duration or 0)
 
@@ -152,34 +154,60 @@ class CurrentTrack:
             )
 
     @classmethod
-    def _grab_lastfm(cls):
-        if PersistentStore.has(cls.album_id):
-            cls.set(image_url=PersistentStore.get(cls.album_id))
-            return
+    def _split_artists(cls, artist_string):
+        separators = r'\s*/\s*|\s*&\s*|\s*,\s*|\s+feat\.?\s+|\s+ft\.?\s+|\s+featuring\s+|\s+and\s+|\s*;\s*'
+        artists = re.split(separators, artist_string, flags=re.IGNORECASE)
+        artists = [a.strip() for a in artists if a.strip()]
+        return artists
 
-        res = requests.get(
-            "https://ws.audioscrobbler.com/2.0/",
-            params={
-                "method": "album.getinfo",
-                "api_key": config.LASTFM_API_KEY,
-                "artist": cls.artist,
-                "album": cls.album,
-                "format": "json",
-            },
-        )
-
-        if res.status_code == 200:
-            image_url = res.json()["album"]["image"][3]["#text"]
-
-            if image_url == "":
-                cls.set(image_url=None)
-                return
-
-            cls.set(
-                image_url=image_url,
+    @classmethod
+    def _try_get_lastfm_image(cls, artist, album):
+        try:
+            res = requests.get(
+                "https://ws.audioscrobbler.com/2.0/",
+                params={
+                    "method": "album.getinfo",
+                    "api_key": config.LASTFM_API_KEY,
+                    "artist": artist,
+                    "album": album,
+                    "format": "json",
+                },
             )
 
-            PersistentStore.set(cls.album_id, image_url)
+            if res.status_code == 200:
+                data = res.json()
+                if "album" in data and "image" in data["album"]:
+                    image_url = data["album"]["image"][3]["#text"]
+                    if image_url:
+                        return image_url
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    def _grab_lastfm(cls):
+        if PersistentStore.has(cls.album_id):
+            cached_url = PersistentStore.get(cls.album_id)
+            cls.set(image_url=cached_url if cached_url else None)
+            return
+
+        image_url = cls._try_get_lastfm_image(cls.artist, cls.album)
+
+        if not image_url:
+            artists = cls._split_artists(cls.artist)
+            for artist in artists:
+                if artist != cls.artist:
+                    image_url = cls._try_get_lastfm_image(artist, cls.album)
+                    if image_url:
+                        break
+
+        if not image_url:
+            PersistentStore.set(cls.album_id, "")
+            cls.set(image_url=None)
+            return
+
+        cls.set(image_url=image_url)
+        PersistentStore.set(cls.album_id, image_url)
 
     @classmethod
     def grab(cls):
