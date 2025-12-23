@@ -83,22 +83,36 @@ class DiscordRPC:
             return image_url
 
         url = f"https://discord.com/api/v9/applications/{self.app_id}/external-assets"
-        response = requests.post(
-            url,
-            headers={"Authorization": self.token, "Content-Type": "application/json"},
-            json={"urls": [image_url]},
-        )
         try:
+            response = requests.post(
+                url,
+                headers={
+                    "Authorization": self.token,
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                },
+                json={"urls": [image_url]},
+            )
+
+            if response.status_code != 200:
+                print(f"Discord external-assets error: {response.status_code} - {response.text}")
+                # Try returning the URL directly as a fallback, sometimes works for certain clients/activities
+                return image_url
+
             data = response.json()
-        except:
-            return self._process_image("https://i.imgur.com/hb3XPzA.png")
+            if isinstance(data, list) and len(data) > 0:
+                image = data[0]["external_asset_path"]
+                return f"mp:{image}"
+            else:
+                print(f"Discord external-assets unexpected response: {data}")
 
-        if not isinstance(data, list):
-            return self._process_image("https://i.imgur.com/hb3XPzA.png")
-        else:
-            image = data[0]["external_asset_path"]
+        except Exception as e:
+            print(f"Discord external-assets exception: {e}")
 
-        return f"mp:{image}"
+        # Fallback to default image if everything fails
+        # return self._process_image("https://i.imgur.com/hb3XPzA.png")
+        # Actually, let's return the original URL if we can't proxy it, maybe the client can handle it
+        return image_url
 
     def send_activity(self, activity_data):
         if not self.ws:

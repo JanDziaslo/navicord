@@ -1,10 +1,10 @@
 import config
 import requests
 import time
-import threading
+import urllib.parse
 import json
 import os
-import re
+import threading
 
 from rpc import DiscordRPC
 
@@ -70,7 +70,10 @@ class CurrentTrack:
 
     image_url = None
 
+    @staticmethod
     def _filter_nowplaying(entry):
+        if isinstance(entry, dict):
+            entry = [entry]
         return [
             player
             for player in entry
@@ -103,9 +106,37 @@ class CurrentTrack:
         cls.title = title
         cls.artist = artist
         cls.album = album
-        cls.image_url = None  # Reset image when track changes
+        cls.image_url = kwargs.get("image_url")
         cls.started_at = time.time()
         cls.ends_at = cls.started_at + (duration or 0)
+
+    @classmethod
+    def _upload_to_0x0(cls, image_content):
+        try:
+            files = {'file': ('cover.jpg', image_content)}
+            headers = {'User-Agent': 'Mozilla/5.0 (compatible; Navicord/1.0)'}
+            res = requests.post("https://0x0.st", files=files, headers=headers)
+            if res.status_code == 200:
+                return res.text.strip()
+            print(f"0x0.st upload failed: {res.status_code} - {res.text}")
+        except Exception as e:
+            print(f"0x0.st upload exception: {e}")
+        return None
+
+    @classmethod
+    def _upload_to_uguu(cls, image_content):
+        try:
+            files = {'files[]': ('cover.jpg', image_content)}
+            headers = {'User-Agent': 'Mozilla/5.0 (compatible; Navicord/1.0)'}
+            res = requests.post("https://uguu.se/upload", files=files, headers=headers)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("success"):
+                    return data["files"][0]["url"]
+            print(f"uguu.se upload failed: {res.status_code} - {res.text}")
+        except Exception as e:
+            print(f"uguu.se upload exception: {e}")
+        return None
 
     @classmethod
     def _grab_subsonic(cls):
@@ -143,6 +174,44 @@ class CurrentTrack:
                 return
 
             nowPlaying = nowPlayingList[0]
+            album_id = nowPlaying["albumId"]
+
+            image_url = None
+            if PersistentStore.has(album_id):
+                cached = PersistentStore.get(album_id)
+                if cached:
+                    image_url = cached
+
+            if not image_url and "coverArt" in nowPlaying:
+                params = {
+                    "id": nowPlaying['coverArt'],
+                    "u": config.NAVIDROME_USERNAME,
+                    "p": config.NAVIDROME_PASSWORD,
+                    "v": "1.13.0",
+                    "c": "navicord"
+                }
+                query_string = urllib.parse.urlencode(params)
+                navidrome_url = f"{config.NAVIDROME_SERVER}/rest/getCoverArt?{query_string}"
+
+                try:
+                    img_res = requests.get(navidrome_url)
+                    if img_res.status_code == 200:
+                        uploaded_url = cls._upload_to_0x0(img_res.content)
+                        if not uploaded_url:
+                            uploaded_url = cls._upload_to_uguu(img_res.content)
+
+                        if uploaded_url:
+                            image_url = uploaded_url
+                            PersistentStore.set(album_id, image_url)
+                        else:
+                            print("Failed to upload to 0x0.st and uguu.se")
+                            # Fallback to navidrome URL if upload fails, though it might not work if local
+                            image_url = navidrome_url
+                    else:
+                        print(f"Failed to fetch cover from Navidrome: {img_res.status_code}")
+                except Exception as e:
+                    print(f"Error processing cover: {e}")
+                    image_url = navidrome_url
 
             cls.set(
                 id=nowPlaying["id"],
@@ -151,70 +220,13 @@ class CurrentTrack:
                 album=nowPlaying["album"],
                 title=nowPlaying["title"],
                 album_id=nowPlaying["albumId"],
+                image_url=image_url,
             )
-
-    @classmethod
-    def _split_artists(cls, artist_string):
-        separators = r'\s*/\s*|\s*&\s*|\s*,\s*|\s+feat\.?\s+|\s+ft\.?\s+|\s+featuring\s+|\s+and\s+|\s*;\s*'
-        artists = re.split(separators, artist_string, flags=re.IGNORECASE)
-        artists = [a.strip() for a in artists if a.strip()]
-        return artists
-
-    @classmethod
-    def _try_get_lastfm_image(cls, artist, album):
-        try:
-            res = requests.get(
-                "https://ws.audioscrobbler.com/2.0/",
-                params={
-                    "method": "album.getinfo",
-                    "api_key": config.LASTFM_API_KEY,
-                    "artist": artist,
-                    "album": album,
-                    "format": "json",
-                },
-            )
-
-            if res.status_code == 200:
-                data = res.json()
-                if "album" in data and "image" in data["album"]:
-                    image_url = data["album"]["image"][3]["#text"]
-                    if image_url:
-                        return image_url
-        except Exception:
-            pass
-        return None
-
-    @classmethod
-    def _grab_lastfm(cls):
-        if PersistentStore.has(cls.album_id):
-            cached_url = PersistentStore.get(cls.album_id)
-            cls.set(image_url=cached_url if cached_url else None)
-            return
-
-        image_url = cls._try_get_lastfm_image(cls.artist, cls.album)
-
-        if not image_url:
-            artists = cls._split_artists(cls.artist)
-            for artist in artists:
-                if artist != cls.artist:
-                    image_url = cls._try_get_lastfm_image(artist, cls.album)
-                    if image_url:
-                        break
-
-        if not image_url:
-            PersistentStore.set(cls.album_id, "")
-            cls.set(image_url=None)
-            return
-
-        cls.set(image_url=image_url)
-        PersistentStore.set(cls.album_id, image_url)
 
     @classmethod
     def grab(cls):
         cls._grab_subsonic()
 
-        if cls.artist and cls.album:
-            cls._grab_lastfm()
 
 
 rpc = DiscordRPC(config.DISCORD_CLIENT_ID, config.DISCORD_TOKEN)
