@@ -1,0 +1,9 @@
+services:
+  navicord:
+    image: ghcr.io/jandziaslo/navicord:latest
+    container_name: navicord
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+

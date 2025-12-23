@@ -2,3 +2,4 @@ images.json
 .env
 .venv
 __pycache__/
+.idea
