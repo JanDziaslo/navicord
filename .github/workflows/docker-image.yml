@@ -22,11 +22,15 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Lowercase repository name
+      run: |
+        echo "REPO=${GITHUB_REPOSITORY,,}" >>${GITHUB_ENV}
+
     - name: Build and Push Docker Image for Multiple Platforms
       uses: docker/build-push-action@v5
       with:
         context: .
         file: Dockerfile
         push: true
-        tags: ghcr.io/${{ github.repository }}:latest
+        tags: ghcr.io/${{ env.REPO }}:latest
         platforms: linux/amd64,linux/arm64,linux/arm/v7
