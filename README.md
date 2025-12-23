@@ -71,4 +71,4 @@ python main.py
 ## ℹ️ Contributing
 
 If you find a bug or have a suggestion, please [open an issue](https://github.com/JanDziaslo/navicord/issues).
-If you want to contribute, please [fork the repository](https://github.com/JanDziaslo/navicordfork) and create a pull request. Thanks!
+If you want to contribute, please [fork the repository](https://github.com/JanDziaslo/navicord/fork) and create a pull request. Thanks!
