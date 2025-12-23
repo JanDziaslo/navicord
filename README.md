@@ -1,9 +1,11 @@
 # Navicord
 
-[![Docker Image](https://badgen.net/badge/docker/navicord?icon=docker&color=blue)](https://hub.docker.com/r/logixism/navicord/tags)
+[![Docker Image](https://badgen.net/badge/docker/navicord?icon=docker&color=blue)](https://ghcr.io/jandziaslo/navicord)
 
 A _headless_ Discord Rich Presence client for [Navidrome](https://www.navidrome.org/), with automatic album art fetching and timestamps
 
+> [!IMPORTANT]
+> This version of Navicord was tested only on ARCH Linux with Python 3.11 and Docker. It should work on other systems as well, but if you encounter any issues, please [open an issue](https://github.com/JanDziaslo/navicord/issues)
 ## ❗ Necessary setup
 
 Create an .env file with the following variables:
@@ -35,9 +37,21 @@ There are also a few other variables that can be set in the environment file:
 To run the server with docker, you can use the following command:
 
 ```bash
-docker run --env-file <path/to/env/file> logixism/navicord
+docker run --env-file <path/to/env/file> ghcr.io/jandziaslo/navicord:latest
 ```
 
+Or docker compose:
+
+```yaml
+services:
+  navicord:
+    image: ghcr.io/jandziaslo/navicord:latest
+    container_name: navicord
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+```
 ### Using Python 🐍
 
 To run the server with python, you can use the following commands:
@@ -56,5 +70,5 @@ python main.py
 
 ## ℹ️ Contributing
 
-If you find a bug or have a suggestion, please [open an issue](https://github.com/logixism/navicord).
-If you want to contribute, please [fork the repository](https://github.com/logixism/navicord/fork) and create a pull request. Thanks!
+If you find a bug or have a suggestion, please [open an issue](https://github.com/JanDziaslo/navicord/issues).
+If you want to contribute, please [fork the repository](https://github.com/JanDziaslo/navicordfork) and create a pull request. Thanks!

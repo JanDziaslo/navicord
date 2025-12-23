@@ -6,4 +6,3 @@ services:
     network_mode: host
     env_file:
       - .env
-
