@@ -97,10 +97,10 @@ class CurrentTrack:
             None in [id, duration, artist, album, title, album_id]
             and not skip_none_check
         ):
-            return
+            return False
 
-        if id == cls.id:
-            return
+        if not skip_none_check and id == cls.id:
+            return False
 
         cls.id = id
         cls.album_id = album_id
@@ -110,6 +110,7 @@ class CurrentTrack:
         cls.image_url = kwargs.get("image_url")
         cls.started_at = time.time()
         cls.ends_at = cls.started_at + (duration or 0)
+        return True
 
     @classmethod
     def _upload_to_0x0(cls, image_content):
@@ -163,8 +164,16 @@ class CurrentTrack:
             return
 
         if len(json["nowPlaying"]) == 0:
-            cls.set(skip_none_check=True)
-            return
+            return cls.set(
+                skip_none_check=True,
+                id=None,
+                duration=None,
+                artist=None,
+                album=None,
+                title=None,
+                album_id=None,
+                image_url=None,
+            )
 
         if json["status"] == "ok" and len(json["nowPlaying"]) > 0:
             nowPlayingEntry = json["nowPlaying"]["entry"]
@@ -226,7 +235,7 @@ class CurrentTrack:
 
     @classmethod
     def grab(cls):
-        cls._grab_subsonic()
+        return cls._grab_subsonic()
 
 
 
@@ -248,7 +257,42 @@ time_passed = 5
 while True:
     time.sleep(config.POLLING_TIME)
 
-    CurrentTrack.grab()
+    changed = CurrentTrack.grab()
+
+    if changed:
+        if CurrentTrack.id is None:
+            rpc.clear_activity()
+            time_passed = 0
+            continue
+
+        match config.ACTIVITY_NAME:
+            case "ARTIST":
+                activity_name = CurrentTrack.artist
+            case "ALBUM":
+                activity_name = CurrentTrack.album
+            case "TRACK":
+                activity_name = CurrentTrack.title
+            case _:
+                activity_name = config.ACTIVITY_NAME
+
+        rpc.send_activity(
+            {
+                "application_id": config.DISCORD_CLIENT_ID,
+                "type": 2,
+                "state": CurrentTrack.album,
+                "details": CurrentTrack.title,
+                "assets": {
+                    "large_image": CurrentTrack.image_url,
+                },
+                "timestamps": {
+                    "start": CurrentTrack.started_at * 1000,
+                    "end": CurrentTrack.ends_at * 1000,
+                },
+                "name": activity_name,
+            }
+        )
+        time_passed = 0
+        continue
 
     if time_passed >= 5:
         time_passed = 0
