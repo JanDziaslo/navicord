@@ -5,6 +5,7 @@ import urllib.parse
 import json
 import os
 import threading
+import signal
 
 from rpc import DiscordRPC
 
@@ -114,7 +115,7 @@ class CurrentTrack:
     def _upload_to_0x0(cls, image_content):
         try:
             files = {'file': ('cover.jpg', image_content)}
-            headers = {'User-Agent': 'Mozilla/5.0 (compatible; Navicord/1.0)'}
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
             res = requests.post("https://0x0.st", files=files, headers=headers)
             if res.status_code == 200:
                 return res.text.strip()
@@ -127,7 +128,7 @@ class CurrentTrack:
     def _upload_to_uguu(cls, image_content):
         try:
             files = {'files[]': ('cover.jpg', image_content)}
-            headers = {'User-Agent': 'Mozilla/5.0 (compatible; Navicord/1.0)'}
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
             res = requests.post("https://uguu.se/upload", files=files, headers=headers)
             if res.status_code == 200:
                 data = res.json()
@@ -230,6 +231,17 @@ class CurrentTrack:
 
 
 rpc = DiscordRPC(config.DISCORD_CLIENT_ID, config.DISCORD_TOKEN)
+
+
+def _graceful_shutdown(signum, frame):
+    try:
+        rpc.shutdown()
+    finally:
+        raise SystemExit(0)
+
+# Ensure Discord presence is cleared on exit signals
+signal.signal(signal.SIGINT, _graceful_shutdown)
+signal.signal(signal.SIGTERM, _graceful_shutdown)
 
 time_passed = 5
 
