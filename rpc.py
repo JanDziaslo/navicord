@@ -137,8 +137,10 @@ class DiscordRPC:
         except Exception:
             self._connect()
 
-    def clear_activity(self):
-        if not self.ws or self._stopped.is_set():
+    def clear_activity(self, force=False):
+        if not self.ws:
+            return
+        if self._stopped.is_set() and not force:
             return
         payload = {
             "op": 3,
@@ -158,7 +160,7 @@ class DiscordRPC:
         """Clear presence and close the websocket so Discord clears immediately."""
         self._stopped.set()
         try:
-            self.clear_activity()
+            self.clear_activity(force=True)
         finally:
             if self.ws:
                 try:

@@ -242,7 +242,9 @@ class CurrentTrack:
 rpc = DiscordRPC(config.DISCORD_CLIENT_ID, config.DISCORD_TOKEN)
 
 
-def _graceful_shutdown(signum, frame):
+# Treat container PID1 exit the same as SIGTERM/SIGINT to clear presence quickly
+
+def _graceful_shutdown(signum=None, frame=None):
     try:
         rpc.shutdown()
     finally:
@@ -251,6 +253,8 @@ def _graceful_shutdown(signum, frame):
 # Ensure Discord presence is cleared on exit signals
 signal.signal(signal.SIGINT, _graceful_shutdown)
 signal.signal(signal.SIGTERM, _graceful_shutdown)
+
+# If running as PID 1 (common in Docker), also catch SIGINT/SIGTERM already set; nothing extra needed
 
 time_passed = 5
 
