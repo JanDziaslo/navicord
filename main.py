@@ -5,6 +5,7 @@ import urllib.parse
 import json
 import os
 import threading
+import signal
 
 from rpc import DiscordRPC
 
@@ -96,10 +97,10 @@ class CurrentTrack:
             None in [id, duration, artist, album, title, album_id]
             and not skip_none_check
         ):
-            return
+            return False
 
-        if id == cls.id:
-            return
+        if not skip_none_check and id == cls.id:
+            return False
 
         cls.id = id
         cls.album_id = album_id
@@ -109,12 +110,13 @@ class CurrentTrack:
         cls.image_url = kwargs.get("image_url")
         cls.started_at = time.time()
         cls.ends_at = cls.started_at + (duration or 0)
+        return True
 
     @classmethod
     def _upload_to_0x0(cls, image_content):
         try:
             files = {'file': ('cover.jpg', image_content)}
-            headers = {'User-Agent': 'Mozilla/5.0 (compatible; Navicord/1.0)'}
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
             res = requests.post("https://0x0.st", files=files, headers=headers)
             if res.status_code == 200:
                 return res.text.strip()
@@ -127,7 +129,7 @@ class CurrentTrack:
     def _upload_to_uguu(cls, image_content):
         try:
             files = {'files[]': ('cover.jpg', image_content)}
-            headers = {'User-Agent': 'Mozilla/5.0 (compatible; Navicord/1.0)'}
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
             res = requests.post("https://uguu.se/upload", files=files, headers=headers)
             if res.status_code == 200:
                 data = res.json()
@@ -162,8 +164,16 @@ class CurrentTrack:
             return
 
         if len(json["nowPlaying"]) == 0:
-            cls.set(skip_none_check=True)
-            return
+            return cls.set(
+                skip_none_check=True,
+                id=None,
+                duration=None,
+                artist=None,
+                album=None,
+                title=None,
+                album_id=None,
+                image_url=None,
+            )
 
         if json["status"] == "ok" and len(json["nowPlaying"]) > 0:
             nowPlayingEntry = json["nowPlaying"]["entry"]
@@ -225,18 +235,64 @@ class CurrentTrack:
 
     @classmethod
     def grab(cls):
-        cls._grab_subsonic()
+        return cls._grab_subsonic()
 
 
 
 rpc = DiscordRPC(config.DISCORD_CLIENT_ID, config.DISCORD_TOKEN)
+
+
+def _graceful_shutdown(signum, frame):
+    try:
+        rpc.shutdown()
+    finally:
+        raise SystemExit(0)
+
+# Ensure Discord presence is cleared on exit signals
+signal.signal(signal.SIGINT, _graceful_shutdown)
+signal.signal(signal.SIGTERM, _graceful_shutdown)
 
 time_passed = 5
 
 while True:
     time.sleep(config.POLLING_TIME)
 
-    CurrentTrack.grab()
+    changed = CurrentTrack.grab()
+
+    if changed:
+        if CurrentTrack.id is None:
+            rpc.clear_activity()
+            time_passed = 0
+            continue
+
+        match config.ACTIVITY_NAME:
+            case "ARTIST":
+                activity_name = CurrentTrack.artist
+            case "ALBUM":
+                activity_name = CurrentTrack.album
+            case "TRACK":
+                activity_name = CurrentTrack.title
+            case _:
+                activity_name = config.ACTIVITY_NAME
+
+        rpc.send_activity(
+            {
+                "application_id": config.DISCORD_CLIENT_ID,
+                "type": 2,
+                "state": CurrentTrack.album,
+                "details": CurrentTrack.title,
+                "assets": {
+                    "large_image": CurrentTrack.image_url,
+                },
+                "timestamps": {
+                    "start": CurrentTrack.started_at * 1000,
+                    "end": CurrentTrack.ends_at * 1000,
+                },
+                "name": activity_name,
+            }
+        )
+        time_passed = 0
+        continue
 
     if time_passed >= 5:
         time_passed = 0

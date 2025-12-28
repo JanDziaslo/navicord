@@ -12,11 +12,12 @@ class DiscordRPC:
         self.token = token
         self.ws = None
         self.seq = None
+        self._stopped = threading.Event()
         self.uri = "wss://gateway.discord.gg/?encoding=json&v=9"
         threading.Thread(target=self._connect, daemon=True).start()
 
     def _connect(self):
-        while True:
+        while not self._stopped.is_set():
             time.sleep(5)
             if self.ws:
                 continue
@@ -42,7 +43,7 @@ class DiscordRPC:
             self.seq = data["s"]
 
     def _ping_loop(self):
-        while self.ws:
+        while self.ws and not self._stopped.is_set():
             time.sleep(41.25)
             try:
                 self.ws.send(json.dumps({"op": 1, "d": self.seq}))
@@ -115,7 +116,7 @@ class DiscordRPC:
         return image_url
 
     def send_activity(self, activity_data):
-        if not self.ws:
+        if not self.ws or self._stopped.is_set():
             return
 
         activity_data["assets"]["large_image"] = self._process_image(
@@ -137,7 +138,7 @@ class DiscordRPC:
             self._connect()
 
     def clear_activity(self):
-        if not self.ws:
+        if not self.ws or self._stopped.is_set():
             return
         payload = {
             "op": 3,
@@ -148,4 +149,20 @@ class DiscordRPC:
                 "afk": None,
             },
         }
-        self.ws.send(json.dumps(payload))
+        try:
+            self.ws.send(json.dumps(payload))
+        except Exception:
+            self._connect()
+
+    def shutdown(self):
+        """Clear presence and close the websocket so Discord clears immediately."""
+        self._stopped.set()
+        try:
+            self.clear_activity()
+        finally:
+            if self.ws:
+                try:
+                    self.ws.close()
+                except Exception:
+                    pass
+                self.ws = None
