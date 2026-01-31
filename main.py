@@ -10,6 +10,10 @@ import signal
 from rpc import DiscordRPC
 
 
+# Uguu.se expiry time - 3 hours in seconds
+UGUU_EXPIRY_SECONDS = 3 * 60 * 60
+
+
 class PersistentStore:
     data = {}
     has_loaded = False
@@ -21,7 +25,22 @@ class PersistentStore:
         if not cls.has_loaded:
             cls.load()
 
-        return cls.data.get(key)
+        entry = cls.data.get(key)
+        if entry is None:
+            return None
+
+        # Check if entry has expiration info (new format)
+        if isinstance(entry, dict) and "url" in entry and "created_at" in entry:
+            # Check if image has expired (3 hours for uguu.se)
+            if time.time() - entry["created_at"] >= UGUU_EXPIRY_SECONDS:
+                # Image expired, remove it
+                cls.delete(key)
+                return None
+            return entry["url"]
+
+        # Legacy format (just URL string) - delete and return None to force re-upload
+        cls.delete(key)
+        return None
 
     @classmethod
     def set(cls, key, value):
@@ -29,8 +48,21 @@ class PersistentStore:
             cls.load()
 
         with cls.lock:
-            cls.data[key] = value
+            cls.data[key] = {
+                "url": value,
+                "created_at": time.time()
+            }
             cls.save()
+
+    @classmethod
+    def delete(cls, key):
+        if not cls.has_loaded:
+            cls.load()
+
+        with cls.lock:
+            if key in cls.data:
+                del cls.data[key]
+                cls.save()
 
     @classmethod
     def has(cls, key):
@@ -44,7 +76,7 @@ class PersistentStore:
         try:
             with open(cls.filename) as file:
                 cls.data = json.load(file)
-        except FileNotFoundError:
+        except (FileNotFoundError, json.JSONDecodeError):
             cls.data = {}
 
         cls.has_loaded = True
