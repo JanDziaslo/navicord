@@ -8,17 +8,17 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux/amd64, linux/arm64, linux/arm/v7]
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
     - uses: actions/checkout@v4
-
-    - name: Set up QEMU (ARM only)
-      if: contains(matrix.platform, 'arm')
-      uses: docker/setup-qemu-action@v3
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -66,5 +66,4 @@ jobs:
         repo="ghcr.io/${REPO}"
         docker buildx imagetools create -t "${repo}:latest" \
           "${repo}:latest-amd64" \
-          "${repo}:latest-arm64" \
-          "${repo}:latest-arm-v7"
+          "${repo}:latest-arm64"
