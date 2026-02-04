@@ -141,7 +141,7 @@ class CurrentTrack:
         cls.album = album
         cls.image_url = kwargs.get("image_url")
         # Add 10 seconds because detection takes time
-        cls.started_at = time.time() - 8
+        cls.started_at = time.time() - 4
         cls.ends_at = cls.started_at + (duration or 0)
         return True
 
